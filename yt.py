@@ -2,36 +2,43 @@ import streamlit as st
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 
-# Load custom CSS
-def load_css(file_name):
-    with open(file_name) as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-
-load_css("style.css")
-
 # Load API key from Streamlit secrets
 google_gemini_api_key = st.secrets["api_keys"]["google_gemini_api_key"]
 
 # Configure Google Gemini API
 genai.configure(api_key=google_gemini_api_key)
 
-# Define functions
 def extract_transcript_details(youtube_video_url):
+    """Extracts transcript text from a YouTube video URL."""
     try:
-        video_id = youtube_video_url.split("v=")[1]
+        # Validate the YouTube URL
+        if "v=" in youtube_video_url:
+            video_id = youtube_video_url.split("v=")[1]
+        elif "youtu.be/" in youtube_video_url:
+            video_id = youtube_video_url.split("youtu.be/")[1]
+        else:
+            raise ValueError("Invalid YouTube URL format")
+
         transcript_text = YouTubeTranscriptApi.get_transcript(video_id)
+
         transcript = " ".join([line["text"] for line in transcript_text])
         return transcript
+
+    except IndexError:
+        st.error(f"Error extracting transcript for {youtube_video_url}: Invalid video ID")
+        return None
     except Exception as e:
         st.error(f"Error extracting transcript for {youtube_video_url}: {e}")
         return None
 
 def generate_gemini_content(transcript_text, prompt):
+    """Generates script content from transcript using Google Gemini Pro."""
     model = genai.GenerativeModel("gemini-pro")
     response = model.generate_content(prompt + transcript_text)
     return response.text
 
 def combine_transcripts(transcript_list):
+    """Combines transcripts from a list of YouTube video URLs."""
     combined_transcript = ""
     for url in transcript_list:
         extracted_transcript = extract_transcript_details(url)
@@ -39,7 +46,6 @@ def combine_transcripts(transcript_list):
             combined_transcript += "\n\n" + extracted_transcript
     return combined_transcript
 
-# UI Layout
 st.title("YouTube Script Generator")
 st.image("https://via.placeholder.com/800x200.png?text=YouTube+Script+Generator", use_column_width=True)
 st.markdown(
@@ -50,8 +56,8 @@ st.markdown(
 )
 
 user_input_links = st.text_input("Enter YouTube Video Links separated by commas:")
+
 if user_input_links:
-    st.subheader("Processing Videos")
     video_links = user_input_links.split(",")
     with st.spinner("Fetching transcripts..."):
         combined_transcript = combine_transcripts(video_links)
@@ -63,7 +69,10 @@ if user_input_links:
             summary = generate_gemini_content(combined_transcript, prompt)
         st.markdown("## Generated Script:")
         st.write(summary)
-        st.download_button("Download Script", summary, file_name="script.txt")
+
+        # Add download button
+        st.download_button(label="Download Script", data=summary, file_name="script.txt", mime="text/plain")
+
     else:
         st.warning("No transcripts were found for the provided links.")
 else:
